@@ -30,6 +30,7 @@ class PDFColorizer(QMainWindow):
         self.stroke_width = 5
         self.font_size = 20
         self.text_input = ""
+        self.edge_strength_threshold = 50  # Controls which lines are considered boundaries
         
         self.initUI()
         
@@ -141,6 +142,22 @@ class PDFColorizer(QMainWindow):
         self.tolerance_label = QLabel("30")
         tolerance_layout.addWidget(self.tolerance_label)
         left_layout.addLayout(tolerance_layout)
+        
+        # Edge strength threshold for flood fill
+        edge_strength_label = QLabel("Edge Strength Threshold:")
+        edge_strength_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        left_layout.addWidget(edge_strength_label)
+        
+        edge_strength_layout = QHBoxLayout()
+        self.edge_strength_spinbox = QSpinBox()
+        self.edge_strength_spinbox.setMinimum(0)
+        self.edge_strength_spinbox.setMaximum(255)
+        self.edge_strength_spinbox.setValue(50)
+        self.edge_strength_spinbox.valueChanged.connect(self.on_edge_strength_changed)
+        edge_strength_layout.addWidget(self.edge_strength_spinbox)
+        self.edge_strength_value_label = QLabel("50")
+        edge_strength_layout.addWidget(self.edge_strength_value_label)
+        left_layout.addLayout(edge_strength_layout)
         
         # Text input for text tool
         text_label = QLabel("Text Content:")
@@ -304,6 +321,11 @@ class PDFColorizer(QMainWindow):
         self.font_size = value
         self.font_size_label.setText(f"{value}px")
     
+    def on_edge_strength_changed(self, value):
+        """Handle edge strength threshold change"""
+        self.edge_strength_threshold = value
+        self.edge_strength_value_label.setText(str(value))
+    
     def choose_color(self):
         """Open color picker dialog"""
         color = QColorDialog.getColor(self.current_color, self, "Choose Color")
@@ -369,21 +391,54 @@ class PDFColorizer(QMainWindow):
         self.drawing = False
     
     def smart_flood_fill(self, x, y):
-        """Perform simple flood fill with color blending"""
+        """Perform intelligent flood fill that respects edge strength"""
         try:
             self.undo_stack.append(self.colored_image.copy())
             
-            # Use PIL's flood fill
-            from PIL import ImageDraw
-            color = (self.current_color.red(), self.current_color.green(), 
-                    self.current_color.blue())
+            # Convert image to numpy array for edge detection
+            colored_array = cv2.cvtColor(np.array(self.colored_image), cv2.COLOR_RGBA2BGR)
+            gray = cv2.cvtColor(colored_array, cv2.COLOR_BGR2GRAY)
             
-            ImageDraw.floodfill(self.colored_image, (x, y), color, 
-                               thresh=self.tolerance_spinbox.value())
-            self.update_display()
+            # Detect edges using Sobel for edge magnitude
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            edge_magnitude = np.sqrt(sobelx**2 + sobely**2).astype(np.uint8)
+            
+            # Create a barrier mask: edges stronger than threshold act as barriers
+            edge_threshold = self.edge_strength_threshold
+            barrier_mask = (edge_magnitude > edge_threshold).astype(np.uint8) * 255
+            
+            # Convert colored image to BGR for OpenCV flood fill
+            colored_bgr = cv2.cvtColor(np.array(self.colored_image), cv2.COLOR_RGBA2BGR)
+            
+            # Prepare the seed point
+            if 0 <= x < colored_bgr.shape[1] and 0 <= y < colored_bgr.shape[0]:
+                # Check if starting point is on a barrier - if so, don't fill
+                if barrier_mask[y, x] > 200:
+                    return  # Starting point is on a strong edge, don't fill
+                
+                # Use OpenCV's flood fill with mask to respect barriers
+                color = (self.current_color.blue(), self.current_color.green(), 
+                        self.current_color.red())  # BGR format
+                
+                # Create a mask for flood fill (must be 1 pixel larger)
+                mask = np.zeros((colored_bgr.shape[0] + 2, colored_bgr.shape[1] + 2), 
+                               dtype=np.uint8)
+                
+                # Add barrier information to mask
+                mask[1:-1, 1:-1] = barrier_mask
+                
+                tolerance = self.tolerance_spinbox.value()
+                cv2.floodFill(colored_bgr, mask, (x, y), color, 
+                            (tolerance,) * 3, (tolerance,) * 3)
+                
+                # Convert back to RGBA and update
+                result_rgba = cv2.cvtColor(colored_bgr, cv2.COLOR_BGR2RGBA)
+                self.colored_image = Image.fromarray(result_rgba, 'RGBA')
+                self.update_display()
             
         except Exception as e:
-            print(f"Fill error: {e}", flush=True)
+            print(f"Smart fill error: {e}", flush=True)
             if self.undo_stack:
                 self.colored_image = self.undo_stack.pop()
             QMessageBox.warning(self, "Fill Error", f"Flood fill failed: {str(e)}")

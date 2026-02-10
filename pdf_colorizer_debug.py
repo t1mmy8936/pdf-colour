@@ -32,6 +32,7 @@ class PDFColorizer(QMainWindow):
         self.colored_image = None
         self.original_image = None
         self.stroke_width = 5
+        self.edge_strength_threshold = 50  # Controls which lines are considered boundaries
         
         print("About to initUI", flush=True)
         self.initUI()
@@ -364,21 +365,62 @@ class PDFColorizer(QMainWindow):
         self.drawing = False
     
     def smart_flood_fill(self, x, y):
-        """Perform simple flood fill with color blending"""
+        """Perform intelligent flood fill that respects edge strength"""
         try:
+            print(f"smart_flood_fill called at ({x}, {y})", flush=True)
             self.undo_stack.append(self.colored_image.copy())
             
-            # Use PIL's flood fill
-            from PIL import ImageDraw
-            color = (self.current_color.red(), self.current_color.green(), 
-                    self.current_color.blue())
+            # Convert image to numpy array for edge detection
+            colored_array = cv2.cvtColor(np.array(self.colored_image), cv2.COLOR_RGBA2BGR)
+            gray = cv2.cvtColor(colored_array, cv2.COLOR_BGR2GRAY)
+            print(f"Converted to grayscale: {gray.shape}", flush=True)
             
-            ImageDraw.floodfill(self.colored_image, (x, y), color, 
-                               thresh=self.tolerance_spinbox.value())
-            self.update_display()
+            # Detect edges using Sobel for edge magnitude
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            edge_magnitude = np.sqrt(sobelx**2 + sobely**2).astype(np.uint8)
+            print(f"Edge magnitude computed: min={edge_magnitude.min()}, max={edge_magnitude.max()}", flush=True)
+            
+            # Create a barrier mask: edges stronger than threshold act as barriers
+            edge_threshold = self.edge_strength_threshold
+            barrier_mask = (edge_magnitude > edge_threshold).astype(np.uint8) * 255
+            print(f"Barrier mask created with threshold={edge_threshold}", flush=True)
+            
+            # Convert colored image to BGR for OpenCV flood fill
+            colored_bgr = cv2.cvtColor(np.array(self.colored_image), cv2.COLOR_RGBA2BGR)
+            
+            # Prepare the seed point
+            if 0 <= x < colored_bgr.shape[1] and 0 <= y < colored_bgr.shape[0]:
+                # Check if starting point is on a barrier - if so, don't fill
+                if barrier_mask[y, x] > 200:
+                    print(f"Starting point is on a strong edge, skip fill", flush=True)
+                    return  # Starting point is on a strong edge, don't fill
+                
+                # Use OpenCV's flood fill with mask to respect barriers
+                color = (self.current_color.blue(), self.current_color.green(), 
+                        self.current_color.red())  # BGR format
+                print(f"Using color (BGR): {color}", flush=True)
+                
+                # Create a mask for flood fill (must be 1 pixel larger)
+                mask = np.zeros((colored_bgr.shape[0] + 2, colored_bgr.shape[1] + 2), 
+                               dtype=np.uint8)
+                
+                # Add barrier information to mask
+                mask[1:-1, 1:-1] = barrier_mask
+                print(f"Mask prepared for flood fill", flush=True)
+                
+                tolerance = self.tolerance_spinbox.value()
+                cv2.floodFill(colored_bgr, mask, (x, y), color, 
+                            (tolerance,) * 3, (tolerance,) * 3)
+                print(f"Flood fill completed with tolerance={tolerance}", flush=True)
+                
+                # Convert back to RGBA and update
+                result_rgba = cv2.cvtColor(colored_bgr, cv2.COLOR_BGR2RGBA)
+                self.colored_image = Image.fromarray(result_rgba, 'RGBA')
+                self.update_display()
             
         except Exception as e:
-            print(f"Fill error: {e}", flush=True)
+            print(f"Smart fill error: {e}", flush=True)
             if self.undo_stack:
                 self.colored_image = self.undo_stack.pop()
             QMessageBox.warning(self, "Fill Error", f"Flood fill failed: {str(e)}")

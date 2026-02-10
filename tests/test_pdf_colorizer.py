@@ -180,6 +180,65 @@ class TestFlooding:
         # Area inside rectangle should not be filled
         pixel_inside = floodfill_test_image.getpixel((50, 50))
         assert pixel_inside == (255, 255, 255)  # Still white
+    
+    def test_edge_strength_detection(self):
+        """Test that edge strength threshold is applied correctly"""
+        import cv2
+        import numpy as np
+        
+        # Create an image with both strong and faint edges
+        img = Image.new('RGB', (200, 200), 'white')
+        draw = ImageDraw.Draw(img)
+        
+        # Draw a strong black rectangle
+        draw.rectangle([50, 50, 150, 150], outline='black', width=3)
+        
+        # Draw a faint gray line at a different location
+        draw.line([(160, 50), (160, 150)], fill=(200, 200, 200), width=1)
+        
+        # Convert to numpy for edge detection
+        img_array = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+        
+        # Compute edge magnitude
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        edge_magnitude = np.sqrt(sobelx**2 + sobely**2).astype(np.uint8)
+        
+        # Get magnitudes in regions with edges
+        strong_edge_magnitude = np.max(edge_magnitude[49:52, 49:52])  # At the strong black rectangle corner
+        faint_edge_magnitude = np.max(edge_magnitude[50:70, 159:161])  # At the faint gray line
+        
+        assert strong_edge_magnitude > faint_edge_magnitude, \
+            f"Strong edge magnitude ({strong_edge_magnitude}) should be > faint edge ({faint_edge_magnitude})"
+    
+    def test_edge_strength_threshold_filtering(self):
+        """Test that edge strength thresholding filters weak edges"""
+        import cv2
+        import numpy as np
+        
+        # Create test image with edges of varying strength
+        img = Image.new('RGB', (150, 150), 'white')
+        draw = ImageDraw.Draw(img)
+        draw.line([(50, 50), (50, 100)], fill='black', width=2)
+        
+        img_array = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+        
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        edge_magnitude = np.sqrt(sobelx**2 + sobely**2).astype(np.uint8)
+        
+        # Test different threshold levels
+        threshold_low = 30
+        threshold_high = 100
+        
+        barrier_low = (edge_magnitude > threshold_low).astype(np.uint8) * 255
+        barrier_high = (edge_magnitude > threshold_high).astype(np.uint8) * 255
+        
+        # Higher threshold should result in fewer barriers
+        assert barrier_high.sum() <= barrier_low.sum(), \
+            "Higher threshold should produce fewer/equal barrier pixels"
 
 
 class TestTextRendering:
