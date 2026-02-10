@@ -340,12 +340,38 @@ class PDFColorizer(QMainWindow):
     
     def on_image_click(self, event):
         """Handle mouse click on image"""
-        if self.colored_image is None:
+        if self.colored_image is None or self.image_label.pixmap() is None:
             return
         
-        # Convert screen coordinates to image coordinates
-        x = int(event.pos().x() / self.zoom_level)
-        y = int(event.pos().y() / self.zoom_level)
+        # Get the pixmap from the label
+        pixmap = self.image_label.pixmap()
+        
+        # Calculate the position of the pixmap within the label (accounts for centering)
+        label_width = self.image_label.width()
+        label_height = self.image_label.height()
+        pixmap_width = pixmap.width()
+        pixmap_height = pixmap.height()
+        
+        # Calculate offsets due to centering alignment
+        x_offset = (label_width - pixmap_width) / 2
+        y_offset = (label_height - pixmap_height) / 2
+        
+        # Get click position relative to the label
+        click_x = event.pos().x()
+        click_y = event.pos().y()
+        
+        # Subtract the pixmap offset to get position relative to pixmap
+        pixmap_relative_x = click_x - x_offset
+        pixmap_relative_y = click_y - y_offset
+        
+        # Check if click is actually on the pixmap
+        if pixmap_relative_x < 0 or pixmap_relative_y < 0 or \
+           pixmap_relative_x >= pixmap_width or pixmap_relative_y >= pixmap_height:
+            return
+        
+        # Convert from zoomed image coordinates to original image coordinates
+        x = int(pixmap_relative_x / self.zoom_level)
+        y = int(pixmap_relative_y / self.zoom_level)
         
         # Bounds checking
         if x < 0 or y < 0 or x >= self.colored_image.width or y >= self.colored_image.height:
@@ -369,11 +395,38 @@ class PDFColorizer(QMainWindow):
     
     def on_mouse_move(self, event):
         """Handle mouse move for brush strokes"""
-        if not self.drawing or self.colored_image is None:
+        if not self.drawing or self.colored_image is None or self.image_label.pixmap() is None:
             return
         
-        x = int(event.pos().x() / self.zoom_level)
-        y = int(event.pos().y() / self.zoom_level)
+        # Get the pixmap from the label
+        pixmap = self.image_label.pixmap()
+        
+        # Calculate the position of the pixmap within the label (accounts for centering)
+        label_width = self.image_label.width()
+        label_height = self.image_label.height()
+        pixmap_width = pixmap.width()
+        pixmap_height = pixmap.height()
+        
+        # Calculate offsets due to centering alignment
+        x_offset = (label_width - pixmap_width) / 2
+        y_offset = (label_height - pixmap_height) / 2
+        
+        # Get mouse position relative to the label
+        mouse_x = event.pos().x()
+        mouse_y = event.pos().y()
+        
+        # Subtract the pixmap offset to get position relative to pixmap
+        pixmap_relative_x = mouse_x - x_offset
+        pixmap_relative_y = mouse_y - y_offset
+        
+        # Check if mouse is on the pixmap
+        if pixmap_relative_x < 0 or pixmap_relative_y < 0 or \
+           pixmap_relative_x >= pixmap_width or pixmap_relative_y >= pixmap_height:
+            return
+        
+        # Convert from zoomed image coordinates to original image coordinates
+        x = int(pixmap_relative_x / self.zoom_level)
+        y = int(pixmap_relative_y / self.zoom_level)
         
         if self.tool_combo.currentText() == "Brush Stroke":
             self.undo_stack.append(self.colored_image.copy())
