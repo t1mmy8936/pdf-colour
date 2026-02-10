@@ -322,15 +322,21 @@ class PDFColorizer(QMainWindow):
         # Get the pixmap from the label
         pixmap = self.image_label.pixmap()
         
+        # Get the actual displayed size of the pixmap in the label
+        # This accounts for scaling and DPI settings
+        actual_pixmap_width = self.image_label.pixmap().width()
+        actual_pixmap_height = self.image_label.pixmap().height()
+        
+        # Get device pixel ratio for DPI-aware scaling
+        dpr = self.image_label.devicePixelRatio()
+        
         # Calculate the position of the pixmap within the label (accounts for centering)
         label_width = self.image_label.width()
         label_height = self.image_label.height()
-        pixmap_width = pixmap.width()
-        pixmap_height = pixmap.height()
         
         # Calculate offsets due to centering alignment
-        x_offset = (label_width - pixmap_width) / 2
-        y_offset = (label_height - pixmap_height) / 2
+        x_offset = (label_width - actual_pixmap_width) / 2
+        y_offset = (label_height - actual_pixmap_height) / 2
         
         # Get click position relative to the label
         click_x = event.pos().x()
@@ -340,11 +346,11 @@ class PDFColorizer(QMainWindow):
         pixmap_relative_x = click_x - x_offset
         pixmap_relative_y = click_y - y_offset
         
-        print(f"Click at label ({click_x}, {click_y}), pixmap offset ({x_offset}, {y_offset}), relative ({pixmap_relative_x}, {pixmap_relative_y})", flush=True)
+        print(f"Click at label ({click_x}, {click_y}), pixmap offset ({x_offset}, {y_offset}), relative ({pixmap_relative_x}, {pixmap_relative_y}), DPR={dpr}", flush=True)
         
         # Check if click is actually on the pixmap
         if pixmap_relative_x < 0 or pixmap_relative_y < 0 or \
-           pixmap_relative_x >= pixmap_width or pixmap_relative_y >= pixmap_height:
+           pixmap_relative_x >= actual_pixmap_width or pixmap_relative_y >= actual_pixmap_height:
             return
         
         # Convert from zoomed image coordinates to original image coordinates
@@ -379,15 +385,17 @@ class PDFColorizer(QMainWindow):
         # Get the pixmap from the label
         pixmap = self.image_label.pixmap()
         
+        # Get the actual displayed size of the pixmap in the label
+        actual_pixmap_width = pixmap.width()
+        actual_pixmap_height = pixmap.height()
+        
         # Calculate the position of the pixmap within the label (accounts for centering)
         label_width = self.image_label.width()
         label_height = self.image_label.height()
-        pixmap_width = pixmap.width()
-        pixmap_height = pixmap.height()
         
         # Calculate offsets due to centering alignment
-        x_offset = (label_width - pixmap_width) / 2
-        y_offset = (label_height - pixmap_height) / 2
+        x_offset = (label_width - actual_pixmap_width) / 2
+        y_offset = (label_height - actual_pixmap_height) / 2
         
         # Get mouse position relative to the label
         mouse_x = event.pos().x()
@@ -399,7 +407,7 @@ class PDFColorizer(QMainWindow):
         
         # Check if mouse is on the pixmap
         if pixmap_relative_x < 0 or pixmap_relative_y < 0 or \
-           pixmap_relative_x >= pixmap_width or pixmap_relative_y >= pixmap_height:
+           pixmap_relative_x >= actual_pixmap_width or pixmap_relative_y >= actual_pixmap_height:
             return
         
         # Convert from zoomed image coordinates to original image coordinates
